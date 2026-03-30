@@ -1061,7 +1061,7 @@ def main():
                     
             dynamic_llm_key = f"ai_version_{selected_llm}"
             
-            # 独立读取 LLM 版本
+            
             current_saved_llm_version = config.get("llm_model_version", "")
             if current_saved_llm_version in all_llm_options:
                 llm_default_idx = all_llm_options.index(current_saved_llm_version)
@@ -1080,11 +1080,11 @@ def main():
                 help="手动指定 API 调用时的 model 参数"
             )
 
-            # 同步 LLM 默认值
+            
             if current_saved_llm_version != selected_llm_version and selected_llm_version != "+ 添加自定义模型版本...":
                 save_config({"llm_model_version": selected_llm_version})
 
-            # LLM 自定义与删除逻辑
+            
             if selected_llm_version == "+ 添加自定义模型版本...":
                 add_col1, add_col2 = st.columns([0.8, 0.2], vertical_alignment="bottom")
                 with add_col1:
@@ -1111,7 +1111,7 @@ def main():
             st.write("") # 增加底部间距
 
 
-            # ================= 🌟 AI 知识提炼部分 =================
+            
             from pathlib import Path
             
             base_dir = Path(config.get("export_base_dir", "./exports"))
@@ -1184,8 +1184,23 @@ def main():
                     with st.chat_message("assistant"):
                         st.markdown(st.session_state.ai_summary_cache)
 
-
-
+        
+        st.markdown(
+            """
+            <div style="
+                text-align: right; 
+                font-size: 12px; 
+                color: #999; 
+                margin-top: -15px; 
+                margin-right: 5px;
+                margin-bottom: 20px;
+            ">
+                提示：若 API 额度耗尽，可以考虑手动投喂 
+                <a href="https://www.doubao.com/chat/" target="_blank" style="color: #666; text-decoration: none;">豆包</a>
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
         st.write("")
         st.markdown("### 运行结果")
         
