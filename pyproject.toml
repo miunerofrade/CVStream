@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "cryptography>=46.0.6",
+    "dashscope>=1.25.15",
     "img2pdf>=0.6.3",
     "numpy>=2.4.3",
     "openai>=2.30.0",

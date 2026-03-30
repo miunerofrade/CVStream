@@ -306,6 +306,10 @@ def run_pipeline(target_url, username, password, headless, asr_worker, stop_even
                 ])
             else:
                 actual_headless = False
+                browser_args.extend([
+                    "--window-position=0,0",  
+                    "--window-size=1920,1080"           
+                ])
                 
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
@@ -754,9 +758,6 @@ def main():
             
             BASE_ASR_ENDPOINTS = {
                 "阿里 Paraformer (DashScope)": "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
-                "科大讯飞 (Xunfei API)": "wss://iat-api.xfyun.cn/v2/iat",
-                "百度短语音识别": "https://vop.baidu.com/server_api",
-                "OpenAI Whisper (需外网代理)": "https://api.openai.com/v1/audio/transcriptions",
                 "本地模型 (Faster-Whisper)": "LOCAL_PATH"
             }
             
@@ -953,13 +954,88 @@ def main():
             st.markdown("---")  
             
             st.markdown("##### 模型版本管理")
-             
-             
-             
-            current_url = ALL_LLM_ENDPOINTS.get(selected_llm, "").lower()
-            recommended_models = ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"]
+
             
-            model_map = {
+            current_asr_url = ALL_ASR_ENDPOINTS.get(selected_asr, "").lower()
+            recommended_asr_models = ["paraformer-realtime-v2", "paraformer-realtime-v1", "paraformer-v1", "whisper-1"]
+            
+            
+            asr_model_map = {
+                "aliyuncs": ["paraformer-realtime-v2", "paraformer-realtime-v1", "paraformer-v1", "paraformer-8k-v1"]
+            }
+            
+            for key_str, models in asr_model_map.items():
+                if key_str in current_asr_url:
+                    recommended_asr_models = models.copy()
+                    break
+                    
+            custom_asr_models_dict = config.get("custom_asr_models", {})
+            saved_custom_asr_models = custom_asr_models_dict.get(selected_asr, [])
+            
+            all_asr_options = []
+            for m in saved_custom_asr_models + recommended_asr_models:
+                if m not in all_asr_options:
+                    all_asr_options.append(m)
+            
+            all_asr_options.append("+ 添加自定义模型版本...")
+                    
+            dynamic_asr_key = f"asr_version_{selected_asr}"
+            
+            # 独立读取 ASR 版本
+            current_saved_asr_version = config.get("asr_model_version", "")
+            if current_saved_asr_version in all_asr_options:
+                asr_default_idx = all_asr_options.index(current_saved_asr_version)
+            else:
+                asr_default_idx = 0
+                
+            def on_asr_version_change():
+                save_config({"asr_model_version": st.session_state[dynamic_asr_key]})
+
+            selected_asr_version = st.selectbox(
+                "指定 ASR 模型版本", 
+                options=all_asr_options, 
+                index=asr_default_idx,
+                key=dynamic_asr_key, 
+                on_change=on_asr_version_change,
+                help="指定调用的具体语音识别模型。⚠️ 提示：云端 ASR API 传输和排队时间较长（大文件可能需数分钟），请耐心等待进程完成。"
+            )
+
+            # 同步 ASR 默认值
+            if current_saved_asr_version != selected_asr_version and selected_asr_version != "+ 添加自定义模型版本...":
+                save_config({"asr_model_version": selected_asr_version})
+
+            # ASR 自定义与删除逻辑
+            if selected_asr_version == "+ 添加自定义模型版本...":
+                add_c1, add_c2 = st.columns([0.8, 0.2], vertical_alignment="bottom")
+                with add_c1:
+                    new_asr_model_name = st.text_input(
+                        "输入 ASR 模型名称", 
+                        placeholder="例如: paraformer-realtime-v2",
+                        key=f"new_asr_model_input_{selected_asr}",
+                        label_visibility="collapsed"
+                    )
+                with add_c2:
+                    if st.button("保存至列表", key=f"save_asr_model_btn_{selected_asr}", use_container_width=True):
+                        if new_asr_model_name and new_asr_model_name not in saved_custom_asr_models:
+                            saved_custom_asr_models.append(new_asr_model_name)
+                            custom_asr_models_dict[selected_asr] = saved_custom_asr_models
+                            save_config({"custom_asr_models": custom_asr_models_dict, "asr_model_version": new_asr_model_name})
+                            st.rerun()
+            elif selected_asr_version in saved_custom_asr_models:
+                if st.button("删除此自定义 ASR 版本", key=f"del_asr_model_btn_{selected_asr}", use_container_width=False):
+                    saved_custom_asr_models.remove(selected_asr_version)
+                    custom_asr_models_dict[selected_asr] = saved_custom_asr_models
+                    save_config({"custom_asr_models": custom_asr_models_dict})
+                    st.rerun()
+
+            st.write("") # 增加上下间距
+
+
+            
+            current_llm_url = ALL_LLM_ENDPOINTS.get(selected_llm, "").lower()
+            recommended_llm_models = ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"]
+            
+            llm_model_map = {
                 "deepseek": ["deepseek-chat", "deepseek-reasoner"],
                 "aliyuncs": ["qwen-plus", "qwen-max", "qwen-turbo"],
                 "volces": ["ep-此处替换为你的接入点ID( 自定义模型版本)"],
@@ -968,62 +1044,74 @@ def main():
                 "minimax": ["abab6.5s-chat", "abab6.5-chat"]
             }
             
-            for key_str, models in model_map.items():
-                if key_str in current_url:
-                    recommended_models = models.copy()
+            for key_str, models in llm_model_map.items():
+                if key_str in current_llm_url:
+                    recommended_llm_models = models.copy()
                     break
                     
-             
-            custom_models_dict = config.get("custom_models", {})
-            saved_custom_models = custom_models_dict.get(selected_llm, [])
+            custom_llm_models_dict = config.get("custom_models", {})
+            saved_custom_llm_models = custom_llm_models_dict.get(selected_llm, [])
             
-             
-            all_options = []
-            for m in saved_custom_models + recommended_models:
-                if m not in all_options:
-                    all_options.append(m)
+            all_llm_options = []
+            for m in saved_custom_llm_models + recommended_llm_models:
+                if m not in all_llm_options:
+                    all_llm_options.append(m)
             
-            all_options.append("+ 添加自定义模型版本...")
+            all_llm_options.append("+ 添加自定义模型版本...")
                     
-            dynamic_key = f"ai_version_{selected_llm}"
+            dynamic_llm_key = f"ai_version_{selected_llm}"
             
-            selected_version = st.selectbox(
+            # 独立读取 LLM 版本
+            current_saved_llm_version = config.get("llm_model_version", "")
+            if current_saved_llm_version in all_llm_options:
+                llm_default_idx = all_llm_options.index(current_saved_llm_version)
+            else:
+                llm_default_idx = 0
+                
+            def on_llm_version_change():
+                save_config({"llm_model_version": st.session_state[dynamic_llm_key]})
+
+            selected_llm_version = st.selectbox(
                 "指定 AI 模型版本", 
-                options=all_options, 
-                key=dynamic_key, 
+                options=all_llm_options, 
+                index=llm_default_idx,
+                key=dynamic_llm_key, 
+                on_change=on_llm_version_change,
                 help="手动指定 API 调用时的 model 参数"
             )
 
-             
-            if selected_version == "+ 添加自定义模型版本...":
+            # 同步 LLM 默认值
+            if current_saved_llm_version != selected_llm_version and selected_llm_version != "+ 添加自定义模型版本...":
+                save_config({"llm_model_version": selected_llm_version})
+
+            # LLM 自定义与删除逻辑
+            if selected_llm_version == "+ 添加自定义模型版本...":
                 add_col1, add_col2 = st.columns([0.8, 0.2], vertical_alignment="bottom")
                 with add_col1:
-                    new_model_name = st.text_input(
+                    new_llm_model_name = st.text_input(
                         "输入模型/接入点名称", 
                         placeholder="例如: ep-12345678-abcde",
+                        key=f"new_llm_model_input_{selected_llm}",
                         label_visibility="collapsed"
                     )
                 with add_col2:
-                    if st.button("保存至列表", use_container_width=True):
-                        if new_model_name and new_model_name not in saved_custom_models:
-                            saved_custom_models.append(new_model_name)
-                            custom_models_dict[selected_llm] = saved_custom_models
-                             
-                            save_config({"custom_models": custom_models_dict})
+                    if st.button("保存至列表", key=f"save_llm_model_btn_{selected_llm}", use_container_width=True):
+                        if new_llm_model_name and new_llm_model_name not in saved_custom_llm_models:
+                            saved_custom_llm_models.append(new_llm_model_name)
+                            custom_llm_models_dict[selected_llm] = saved_custom_llm_models
+                            save_config({"custom_models": custom_llm_models_dict, "llm_model_version": new_llm_model_name})
                             st.rerun()
-            elif selected_version in saved_custom_models:
-                 
-                if st.button("删除此自定义版本", use_container_width=False):
-                    saved_custom_models.remove(selected_version)
-                    custom_models_dict[selected_llm] = saved_custom_models
-                    save_config({"custom_models": custom_models_dict})
+            elif selected_llm_version in saved_custom_llm_models:
+                if st.button("删除此自定义版本", key=f"del_llm_model_btn_{selected_llm}", use_container_width=False):
+                    saved_custom_llm_models.remove(selected_llm_version)
+                    custom_llm_models_dict[selected_llm] = saved_custom_llm_models
+                    save_config({"custom_models": custom_llm_models_dict})
                     st.rerun()
 
-            st.write("")  
-            
-             
-             
-             
+            st.write("") # 增加底部间距
+
+
+            # ================= 🌟 AI 知识提炼部分 =================
             from pathlib import Path
             
             base_dir = Path(config.get("export_base_dir", "./exports"))
@@ -1036,7 +1124,6 @@ def main():
             if not available_courses:
                 st.info("本地暂无字幕数据，请先运行抓取任务。")
             else:
-                 
                 sel_col1, sel_col2, sel_col3 = st.columns([0.35, 0.35, 0.3], vertical_alignment="bottom")
                 with sel_col1:
                     target_course = st.selectbox("选择要总结的课程", options=available_courses, key="sum_course_sel")
@@ -1045,12 +1132,10 @@ def main():
                     available_dates = [d.name for d in course_dir.iterdir() if d.is_dir()]
                     target_date = st.selectbox("选择课程批次", options=available_dates, key="sum_date_sel")
                 with sel_col3:
-                     
                     start_sum = st.button("生成今日 AI 知识提炼", use_container_width=True, type="primary")
 
-                 
                 if start_sum:
-                    if selected_version == "+ 添加自定义模型版本...":
+                    if selected_llm_version == "+ 添加自定义模型版本...":
                         st.error("请先完成自定义模型的输入并点击保存。")
                     else:
                         try:
@@ -1060,9 +1145,8 @@ def main():
                             temp_config["llm_engine"] = selected_llm
                             
                             summarizer = AISummarizer(temp_config)
-                            summarizer.model_name = selected_version 
+                            summarizer.model_name = selected_llm_version 
                             
-                             
                             with st.container(border=True):
                                 st.markdown(f"#### 正在生成: {target_course} ({target_date})")
                                  
@@ -1074,11 +1158,9 @@ def main():
                                     target_date
                                 )
                                 
-                                 
                                 full_content = st.write_stream(stream_gen)
                                 st.session_state.ai_summary_cache = full_content
 
-                                 
                                 export_base_dir = config.get("export_base_dir", "./exports")
                                 knowledge_dir = Path(export_base_dir) / "knowledge" / target_course
                                 knowledge_dir.mkdir(parents=True, exist_ok=True)
@@ -1125,26 +1207,48 @@ def main():
                 if not target_url or not target_url.startswith("http"):
                     st.error("拦截操作：目标网址为空或格式错误！")
                 else:
-                    
-                     
                     if st.session_state.asr_engine == "本地模型 (Faster-Whisper)":
                         current_model_path = config.get("asr_model_path", "")
                         if not current_model_path or not os.path.exists(current_model_path):
-                            st.error("本地 ASR 模型目录不存在")
+                            st.error("拦截操作：本地 ASR 模型目录不存在，请先在上方配置模型路径。")
                             st.stop()
+                    else:
+                        # 🌟 修复 1：云端模型校验，增加 API Key 的前置拦截
+                        current_asr_version = config.get("asr_model_version", "")
+                        if not current_asr_version or current_asr_version == "+ 添加自定义模型版本...":
+                            st.error("拦截操作：云端 ASR 引擎未指定具体的模型版本！请先在上方选择。")
+                            st.stop()
+                        if not config.get("asr_api_key", "").strip():
+                            st.error("拦截操作：未配置云端 ASR 的 API 密钥 (Key)！请在上方填写并保存。")
+                            st.stop()
+                        # 🌟 修复 2：防止“挂羊头卖狗肉”，当前只允许走阿里的引擎名
+                        if "阿里" not in st.session_state.asr_engine and "aliyuncs" not in st.session_state.asr_engine.lower():
+                            st.error("拦截操作：当前云端底层代码 (asr_cloud.py) 仅支持阿里云 DashScope 接口。请选择阿里系端点！")
+                            st.stop()
+
                     with st.status("正在执行任务...", expanded=True) as status:
                         log_container = st.empty()
                         progress_bar = st.empty()
                         
-                         
                         st.session_state.task_logs = "" 
                         
-                        if "asr_worker" not in st.session_state or st.session_state.asr_worker is None:
+                        # 🌟 修复 3：彻底解决 Worker 缓存不更新 Bug。每次运行都强制注入最新的 config
+                        current_ui_asr = st.session_state.get("asr_engine")
+                        if current_ui_asr == "本地模型 (Faster-Whisper)":
                             st.session_state.asr_worker = LocalASRWorker(
                                 model_path=config.get("asr_model_path", "./models/faster-whisper-tiny"),
                                 export_base_dir=config.get("export_base_dir", "./exports")
                             )
+                        else:
+                            from asr_cloud import CloudASRWorker
+                            st.session_state.asr_worker = CloudASRWorker(
+                                config=config,  # 传入刚从 UI 保存好的最新 config
+                                export_base_dir=config.get("export_base_dir", "./exports")
+                            )
+                            
                         current_worker = st.session_state.get("asr_worker")
+
+                        
 
                         for log_line in run_pipeline(
                             target_url, 

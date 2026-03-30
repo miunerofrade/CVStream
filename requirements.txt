@@ -7,3 +7,4 @@ psutil
 cryptography
 opencv-python
 img2pdf
+dashscope
