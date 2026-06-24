@@ -1,0 +1,6 @@
+streamlit>=1.30.0
+streamlit-option-menu
+playwright
+openai
+psutil
+cryptography
